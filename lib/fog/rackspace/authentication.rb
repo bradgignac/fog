@@ -1,22 +1,49 @@
 module Fog
   module Rackspace
     module Authentication
+      US_ENDPOINT = 'https://identity.api.rackspacecloud.com'
+      UK_ENDPOINT = 'https://lon.identity.api.rackspacecloud.com'
+
       attr_reader :auth_token, :auth_token_expiration, :service_catalog
 
-      def authenticate
-        renew_auth_token if needs_authentication?
+      def authenticate(options, connection_options)
+        renew_auth_token(options, connection_options) unless valid_token?
       end
 
-      def renew_auth_token
-        # Make the request
+      def valid_token?
+        return @auth_token && @auth_token_expiration > DateTime.now
       end
 
-      def needs_authentication?
-        return !@auth_token || token_expired?
-      end
+      def renew_auth_token(options, connection_options)
+        auth_url = options[:rackspace_auth_url] || US_ENDPOINT
+        auth_url = 'https://' + auth_url unless auth_url.start_with?('https://')
+        uri = URI.parse(auth_url);
 
-      def token_expired?
-        @auth_token_expiration >= DateTime.now.utc
+        credentials = credentials = {
+          'auth' => {
+            'RAX-KSKEY:apiKeyCredentials' => {
+              'username' => options[:rackspace_username],
+              'apiKey' => options[:rackspace_api_key]
+            }
+          }
+        }
+
+        connection = Fog::Connection.new(auth_url, false, connection_options)
+        response = connection.request({
+          :expect => [200, 203],
+          :host => uri.host,
+          :path => '/v2.0/tokens',
+          :method => 'POST',
+          :headers => {
+            'Content-Type' => 'application/json'
+          },
+          :body => Fog::JSON.encode(credentials)
+        })
+        body = Fog::JSON.decode(response.body)
+
+        @auth_token = body['access']['token']['id']
+        @auth_token_expiration = DateTime.parse(body['access']['token']['expires'])
+        @service_catalog = ServiceCatalog.new(body['access']['serviceCatalog'])
       end
 
       class ServiceCatalog
