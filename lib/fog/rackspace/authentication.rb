@@ -10,6 +10,8 @@ module Fog
         renew_auth_token(options, connection_options) unless valid_token?
       end
 
+      private
+
       def valid_token?
         return @auth_token && @auth_token_expiration > DateTime.now
       end
